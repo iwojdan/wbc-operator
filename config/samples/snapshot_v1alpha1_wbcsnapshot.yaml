@@ -1,0 +1,10 @@
+apiVersion: snapshot.wbc.com/v1alpha1
+kind: WbcSnapshot
+metadata:
+  name: wbcsnapshot-test
+spec:
+  # TODO(user): Add fields here
+  sourceVolumeName: pv-test
+  sourceClaimName: pvc-test
+  namespace: default
+  hostPath: "/tmp/wbc-test-dest"
