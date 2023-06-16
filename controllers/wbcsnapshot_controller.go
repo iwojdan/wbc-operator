@@ -66,24 +66,35 @@ func (r *WbcSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	fmt.Println(string(res2B))
 	fmt.Println("tutaj koniec WbcSnapshot")
 
-	snapshotReadErr := r.Get(ctx, req.NamespacedName, snapshot)
-
+	snapshotReadErr := r.Client.Get(ctx, req.NamespacedName, snapshot)
+	res3B, _ := json.Marshal(snapshot)
+	fmt.Println("Jestem linijka tuż po r.Client.Get i teraz snapshot się zmineił na", string(res3B))
+	//if snapshotReadErr != nil {
+	//		panic(fmt.Sprint("error 1:", snapshotReadErr))
+	//	}
 	//Exit early if something went wrong parsing the wbcsnapshot object
-	if snapshotReadErr != nil || len(snapshot.Name) == 0 {
-		r.Log.Error(snapshotReadErr, "Error encountered reading WbcSnapshot")
-		return ctrl.Result{}, snapshotReadErr
+	//if snapshotReadErr != nil || len(snapshot.Name) == 0 {
+	//	r.Log.Error(snapshotReadErr, "Error encountered reading WbcSnapshot")
+	//	return ctrl.Result{}, snapshotReadErr
+	//}
+	fmt.Println("snapshotReadErr", snapshotReadErr)
+	if snapshotReadErr != nil {
+		fmt.Println("snapshotReadErr jest rózny od zera")
 	}
 
 	snapshotCreator := &corev1.Pod{}
+	res4B, _ := json.Marshal(snapshotCreator)
+	fmt.Println("snapshotCreator", string(res4B))
 	snapshotCreatorReadErr := r.Get(
 		ctx, types.NamespacedName{Name: "snapshot-creator", Namespace: req.Namespace}, snapshotCreator,
 	)
+	fmt.Println("snapshotCreatorReadErr", snapshotCreatorReadErr)
 	// Exit early if the WBCSnapshot creator is already running
 	if snapshotCreatorReadErr == nil {
 		r.Log.Error(snapshotCreatorReadErr, "Snapshot Creator already running!")
 		return ctrl.Result{}, snapshotCreatorReadErr
 	}
-
+	fmt.Println("Jestem za snapshotCreatorReadErr tworzymy zaraz newPVname")
 	newPvName := "wbc-snapshot-pv-" + strconv.FormatInt(time.Now().Unix(), 10) + "-" + snapshot.Spec.SourceVolumeName
 	newPvcName := "wbc-snapshot-pvc-" + strconv.FormatInt(time.Now().Unix(), 10) + "-" + snapshot.Spec.SourceClaimName
 
@@ -107,14 +118,18 @@ func (r *WbcSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		},
 	}
 	pvCreateErr := r.Create(ctx, &newPersistentVol)
+	fmt.Println("pvCreateErr", pvCreateErr)
 	if pvCreateErr != nil {
 		r.Log.Error(pvCreateErr, "Error encountered creating new pv")
 		return ctrl.Result{}, pvCreateErr
 	}
-
-	_ = r.Log.WithValues("Created New Snapshot Persistent Volume", req.NamespacedName)
+	fmt.Println("jestem przed log created new snapshot persistent Volume")
+	fmt.Println("req.NamespacedName", req.NamespacedName)
+	//_ = r.Log.WithValues("Created New Snapshot Persistent Volume", req.NamespacedName) to jest zle zadeklarowane i powoduje panic error w operatorze
+	fmt.Println("New Snapshot Persistent volume", newPersistentVol)
 	manualStorageClass := "manual"
-
+	fmt.Println("manualStorageClass", manualStorageClass)
+	fmt.Println("Jestem przed tworzeniem PersistentVolClaim")
 	//Create a new Persistent Volume Claim connected to the new Persistent Volume
 	newPersistentVolClaim := corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -132,14 +147,17 @@ func (r *WbcSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			},
 		},
 	}
+	fmt.Println("Jestem za newPersistentVolClaim a przed pvcCreateErr")
 	// client created PVC in the cluster
 	pvcCreateErr := r.Create(ctx, &newPersistentVolClaim)
+	fmt.Println("pvcCreateErr", pvcCreateErr)
+
 	if pvcCreateErr != nil {
 		r.Log.Error(pvcCreateErr, "Error encountered creating new pvc")
 		return ctrl.Result{}, pvcCreateErr
 	}
-	_ = r.Log.WithValues("Created New Snapshot Persistent Volume Claim", req.NamespacedName)
-
+	//_ = r.Log.WithValues("Created New Snapshot Persistent Volume Claim", req.NamespacedName)
+	fmt.Println("New Snapshot Persistent volume Claim", newPersistentVolClaim)
 	//start a Pod that is hooked up to the snapshot PVC and the original PVC
 	// The Pod simply copies a file from the old PVC to the new PVC - creating a primitive snapshot
 	// corev1 api is used to create pod dynamicly
@@ -175,7 +193,10 @@ func (r *WbcSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 					Command: []string{
 						"/bin/sh",
 						"-c",
-						"cp /tmp/source/test.file /tmp/dest/test.file"},
+						//	"ls /tmp/dest"},
+						//"mkdir /tmp/source",
+						"echo -e \"abcd\" > /tmp/source/test",
+						"cp /tmp/source/test /tmp/dest/"},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      "wbc-snapshot-" + snapshot.Spec.SourceClaimName,
@@ -196,8 +217,9 @@ func (r *WbcSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		r.Log.Error(podCreateErr, "Error encountered creating snapshotting pod")
 		return ctrl.Result{}, podCreateErr
 	}
+	fmt.Println("snapshot-creator pod", snapshotCreatorPod)
 
-	_ = r.Log.WithValues("Instantiating snapshot-creator pod", req.NamespacedName)
+	//_ = r.Log.WithValues("Instantiating snapshot-creator pod", req.NamespacedName)
 
 	/**
 	Challenge:
